@@ -446,7 +446,13 @@ function bindEvents() {
     }
     copyText(text, el.btnCopy, '复制');
   });
-  el.btnCopyApi.addEventListener('click', () => copyText(buildApiUrl(), el.btnCopyApi, '复制 API 地址'));
+  el.btnCopyApi.addEventListener('click', () => {
+    if (lastError) {
+      flashButton(el.btnCopyApi, '复制 API 地址', false);
+      return;
+    }
+    copyText(buildApiUrl(), el.btnCopyApi, '复制 API 地址');
+  });
 }
 
 function applySettingsToControls() {

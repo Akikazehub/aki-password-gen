@@ -197,6 +197,20 @@ test('sanitizeSpecialChars drops DEL, C1 and bidi/zero-width characters', () => 
   assert.equal(sanitizeSpecialChars(`a${rtl}b${zws}c${del}`), 'abc');
 });
 
+test('construct path keeps banning trigrams in mixed astral+BMP pools', () => {
+  // Regression: pw.slice(i-2, i) sliced UTF-16 units while the loop counted
+  // code points, so stems misaligned after astral symbols and the ban no-op'd
+  // (44/50 failing draws before the fix).
+  for (let i = 0; i < 50; i++) {
+    const pw = generatePassword({
+      lowercase: false, uppercase: false, digits: false,
+      symbols: true, specialChars: '😀abc', excludeAmbiguous: false,
+      allowRepeats: false, length: 64,
+    });
+    assert.equal(hasInsecurePattern(pw), false, pw);
+  }
+});
+
 test('length bounds are enforced', () => {
   assert.throws(() => generatePassword({ length: 3 }), /length/);
   assert.throws(() => generatePassword({ length: 129 }), /length/);
