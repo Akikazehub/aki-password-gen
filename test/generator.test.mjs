@@ -143,6 +143,27 @@ test('practically-impossible configs fail fast instead of burning retries', () =
   assert.ok(Date.now() - start < 2000, 'fail-fast guard must not burn the retry budget');
 });
 
+test('constructive path serves long digits-only configs', () => {
+  const pw = generatePassword({
+    lowercase: false, uppercase: false, symbols: false,
+    excludeAmbiguous: false, length: 128,
+  });
+  assert.equal(pw.length, 128);
+  assert.match(pw, /^[0-9]+$/, pw);
+  assert.equal(hasAdjacentRepeat(pw), false, pw);
+  assert.equal(hasInsecurePattern(pw), false, pw);
+});
+
+test('legacy configurations keep the blind rejection-sampling path', () => {
+  // estimateBlindSuccessProbability for legacy options stays far above the
+  // 1e-3 threshold (verified separately); assert a legacy draw still works.
+  for (let i = 0; i < 50; i++) {
+    const pw = generatePassword({ length: 128, symbols: true });
+    assert.equal(pw.length, 128);
+    assert.ok(hasClass(pw, LEGACY_SPECIAL_CHARS), pw);
+  }
+});
+
 test('length bounds are enforced', () => {
   assert.throws(() => generatePassword({ length: 3 }), /length/);
   assert.throws(() => generatePassword({ length: 129 }), /length/);

@@ -14,6 +14,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   generatePassword,
   generatePassphrase,
+  normalizeOptions,
   sanitizeSpecialChars,
   LEGACY_SPECIAL_CHARS,
   MIN_LENGTH,
@@ -86,6 +87,7 @@ function sendFile(res, baseDir, relative, contentType) {
     res.writeHead(200, {
       'Content-Type': contentType,
       'Cache-Control': 'no-cache',
+      'X-Content-Type-Options': 'nosniff',
     });
     res.end(data);
   });
@@ -134,6 +136,29 @@ function handleGetPassword(res, url) {
   const xkcd = sp.get('xkcd') === 'true';
   const asJson = sp.get('format') === 'json';
 
+  // Configuration mistakes (empty symbol set, every class disabled, ...) are
+  // client errors: preflight them so they answer 400 instead of failing with
+  // a 500 from the middle of generation.
+  const genOptions = xkcd ? null : {
+    length,
+    lowercase: parseStrictBool(sp.get('lowercase'), true),
+    uppercase: parseStrictBool(sp.get('uppercase'), true),
+    digits: parseStrictBool(sp.get('digits'), true),
+    symbols,
+    specialChars,
+    excludeAmbiguous: parseStrictBool(sp.get('exclude_ambiguous'), true),
+    allowRepeats: parseStrictBool(sp.get('allow_repeats'), false),
+    avoidSequences: parseStrictBool(sp.get('avoid_sequences'), true),
+  };
+  if (genOptions) {
+    try {
+      normalizeOptions(genOptions);
+    } catch (err) {
+      sendText(res, 400, `${err.message}\n`, { api: true });
+      return;
+    }
+  }
+
   const passwords = [];
   try {
     for (let i = 0; i < amount; i++) {
@@ -143,17 +168,7 @@ function handleGetPassword(res, url) {
             separator: sp.get('separator') ?? '',
             prependDate: sp.get('date') !== 'false',
           })
-        : generatePassword({
-            length,
-            lowercase: parseStrictBool(sp.get('lowercase'), true),
-            uppercase: parseStrictBool(sp.get('uppercase'), true),
-            digits: parseStrictBool(sp.get('digits'), true),
-            symbols,
-            specialChars,
-            excludeAmbiguous: parseStrictBool(sp.get('exclude_ambiguous'), true),
-            allowRepeats: parseStrictBool(sp.get('allow_repeats'), false),
-            avoidSequences: parseStrictBool(sp.get('avoid_sequences'), true),
-          }));
+        : generatePassword(genOptions));
     }
   } catch (err) {
     sendText(res, 500, `generating password: ${err.message}\n`, { api: true });
@@ -165,6 +180,7 @@ function handleGetPassword(res, url) {
       'Content-Type': 'application/json; charset=utf-8',
       'Cache-Control': 'no-cache',
       'Access-Control-Allow-Origin': '*',
+      'X-Content-Type-Options': 'nosniff',
     });
     res.end(JSON.stringify(passwords));
   } else {
@@ -173,6 +189,7 @@ function handleGetPassword(res, url) {
       'Content-Type': 'text/plain',
       'Cache-Control': 'no-cache',
       'Access-Control-Allow-Origin': '*',
+      'X-Content-Type-Options': 'nosniff',
     });
     res.end(passwords.join('\n'));
   }

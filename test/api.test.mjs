@@ -226,6 +226,31 @@ test('non-GET requests are rejected with an empty 405 like gorilla/mux', async (
   assert.equal(await res.text(), '');
 });
 
+test('long digits-only configs construct successfully instead of 500ing', async () => {
+  // Regression: blind rejection sampling degenerates here (P ~1e-8 per draw);
+  // the constructive path must serve the documented 4..128 range quickly.
+  for (const [query, len] of [['&exclude_ambiguous=false', 128], ['', 100]]) {
+    const res = await getPassword(`?lowercase=false&uppercase=false&length=${len}${query}`);
+    assert.equal(res.status, 200);
+    const body = await res.text();
+    assert.equal(body.length, len);
+    assert.match(body, /^[0-9]+$/, body);
+    for (let i = 1; i < body.length; i++) {
+      assert.notEqual(body[i], body[i - 1], `adjacent repeat at ${i} in ${body}`);
+    }
+  }
+});
+
+test('empty or unusable symbol sets are client errors (400, not 500)', async () => {
+  const empty = await getPassword('?special_chars=');
+  assert.equal(empty.status, 400);
+  assert.equal(await empty.text(), 'symbol set is empty\n');
+
+  const ambiguous = await getPassword('?special_chars=0');
+  assert.equal(ambiguous.status, 400);
+  assert.match(await ambiguous.text(), /no usable characters/);
+});
+
 test('query pairs containing a raw semicolon are dropped like Go ParseQuery', async () => {
   // Go's url.ParseQuery (1.17+) drops pairs with a raw ';', so upstream sees
   // an empty separator; '%3B' is kept and decoded on both sides.
