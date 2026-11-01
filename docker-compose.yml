@@ -11,6 +11,14 @@ services:
     ports:
       - "3000:3000"
     restart: unless-stopped
+    # 超轻量上限: 空闲内存约 40-60 MB, 128 MB 留足余量 / idle RSS ~50 MB
+    mem_limit: 128m
+    # 日志轮转, 长期运行不占磁盘 / rotate logs so the NAS disk stays clean
+    logging:
+      driver: json-file
+      options:
+        max-size: "1m"
+        max-file: "1"
     # Optional / 可选: TZ affects the xkcd date prefix / TZ 仅影响 xkcd 口令的日期前缀
     # environment:
     #   TZ: Asia/Shanghai

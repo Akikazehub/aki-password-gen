@@ -128,6 +128,10 @@ curl 'http://nas:3000/v1/getPassword?xkcd=true&length=4&separator=-&date=false'
 3. 所有旧 URL（`/v1/getPassword?length=10&special=true`、`/v1/healthz`）无需任何修改。
 4. 想要旧版没有的自定义符号，加 `special_chars` 参数即可，或直接用网页界面。
 
+## 资源占用
+
+镜像基于 `node:22-alpine`（无任何 npm 依赖），应用本体仅几十 KB；运行时空闲内存约 40–60 MB、CPU 接近零（只在收到请求的瞬间干活）。已内置的超轻量措施：V8 堆上限 48 MB、健康检查用 busybox `wget`（探针进程 ~1 MB，而非每 30 秒拉起一个完整的 Node 运行时）、compose 默认 `mem_limit: 128m` 与日志轮转（`max-size: 1m`），NAS 上长期挂机不占资源。
+
 ## GitHub Actions 自动构建
 
 推送到 `main`（或打 `v*.*.*` 格式的标签，如 `v1.0.0`）时，工作流会：

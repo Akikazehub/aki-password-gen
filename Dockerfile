@@ -9,12 +9,17 @@ COPY lib ./lib
 COPY public ./public
 
 ENV NODE_ENV=production
+# The workload is a few KB of string shuffling per request; a 48 MB V8 heap
+# cap keeps worst-case RSS far below the compose mem_limit.
+ENV NODE_OPTIONS=--max-old-space-size=48
 
 EXPOSE 3000
 
 USER node
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
-  CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/v1/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+# busybox wget (~1 MB process) instead of spawning a second full node runtime
+# (~35 MB) for every health probe.
+HEALTHCHECK --interval=60s --timeout=5s --start-period=10s --retries=3 \
+  CMD wget -q -O /dev/null "http://127.0.0.1:${PORT:-3000}/v1/healthz" || exit 1
 
 CMD ["node", "server.js"]
