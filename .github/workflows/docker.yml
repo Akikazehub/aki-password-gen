@@ -5,11 +5,15 @@ on:
     branches:
       - main
     tags:
-      - 'v*'
+      - 'v*.*.*'
 
 permissions:
   contents: read
   packages: write
+
+concurrency:
+  group: docker-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
@@ -25,10 +29,8 @@ jobs:
         with:
           node-version: 22
 
-      # Runs `node --test` directly instead of `npm test`: the package.json
-      # script passes `test/` as a positional arg, which Node 22's runner
-      # treats as a single module and fails on. Bare `node --test` discovers
-      # test/*.test.mjs on its own.
+      # Direct `node --test` (not `npm test`): the gate stays independent of
+      # future package.json script changes; Node 22 discovers test/*.test.mjs.
       - name: Run tests
         run: node --test
 
@@ -89,8 +91,8 @@ jobs:
           push: true
           tags: ${{ steps.meta_ghcr.outputs.tags }}
           labels: ${{ steps.meta_ghcr.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=ghcr
+          cache-to: type=gha,mode=max,scope=ghcr
 
       - name: Build and push Docker Hub image
         if: env.DOCKERHUB_USERNAME != ''
@@ -101,5 +103,5 @@ jobs:
           push: true
           tags: ${{ steps.meta_hub.outputs.tags }}
           labels: ${{ steps.meta_hub.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=hub
+          cache-to: type=gha,mode=max,scope=hub
