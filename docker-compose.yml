@@ -1,0 +1,16 @@
+# aki-password-gen — Docker Compose deployment example / 部署示例
+#
+# Run / 启动: docker compose up -d
+# Endpoint / 端点: http://localhost:3000
+
+services:
+  aki-password-gen:
+    # GHCR image; Docker Hub alternative / 备选镜像: akikazehub/aki-password-gen:latest
+    image: ghcr.io/akikazehub/aki-password-gen:latest
+    container_name: aki-password-gen
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+    # Optional / 可选: TZ affects the xkcd date prefix / TZ 仅影响 xkcd 口令的日期前缀
+    # environment:
+    #   TZ: Asia/Shanghai

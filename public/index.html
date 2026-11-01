@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Aki Password Gen</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <main class="container">
+    <header class="page-header">
+      <h1>Aki Password Gen</h1>
+      <p class="subtitle">本地密码生成器，与旧版 luzifer-password API 兼容</p>
+    </header>
+
+    <div class="tabs" role="tablist" aria-label="生成模式">
+      <button type="button" id="tab-random" class="tab" role="tab" aria-selected="true" aria-controls="panel-random">随机密码</button>
+      <button type="button" id="tab-passphrase" class="tab" role="tab" aria-selected="false" aria-controls="panel-passphrase" tabindex="-1">短语密码 (XKCD)</button>
+    </div>
+
+    <section class="card" aria-label="生成结果">
+      <output id="password-output" class="password-box" aria-live="polite">—</output>
+      <ul id="batch-list" class="batch-list" hidden></ul>
+      <div class="output-actions">
+        <button type="button" id="btn-regenerate" class="btn btn-primary">重新生成</button>
+        <button type="button" id="btn-copy" class="btn">复制</button>
+      </div>
+      <div class="strength">
+        <div class="strength-bar" aria-hidden="true"><div id="strength-fill" class="strength-fill"></div></div>
+        <span id="strength-label" class="strength-label">强度：--</span>
+      </div>
+      <p id="gen-warning" class="warning" hidden></p>
+    </section>
+
+    <section id="panel-random" class="card" role="tabpanel" aria-labelledby="tab-random">
+      <h2>随机密码</h2>
+
+      <div class="field">
+        <label class="field-label" for="length-number">长度</label>
+        <div class="length-controls">
+          <input type="range" id="length-range" min="4" max="128" step="1" value="20" aria-label="密码长度">
+          <input type="number" id="length-number" class="num-input" min="4" max="128" step="1" value="20" inputmode="numeric">
+        </div>
+      </div>
+
+      <fieldset class="field">
+        <legend class="field-label">字符类型</legend>
+        <label class="check"><input type="checkbox" id="opt-lowercase" checked>小写字母</label>
+        <label class="check"><input type="checkbox" id="opt-uppercase" checked>大写字母</label>
+        <label class="check"><input type="checkbox" id="opt-digits" checked>数字</label>
+        <label class="check"><input type="checkbox" id="opt-symbols">特殊符号</label>
+      </fieldset>
+
+      <div class="field feature">
+        <label class="field-label" for="special-chars">特殊字符集</label>
+        <input type="text" id="special-chars" class="text-input mono" spellcheck="false" autocomplete="off">
+        <div class="preset-row" role="group" aria-label="特殊字符集预设">
+          <button type="button" id="preset-legacy" class="btn btn-small">默认(旧版)</button>
+          <button type="button" id="preset-basic" class="btn btn-small">!@#$%</button>
+          <button type="button" id="preset-min" class="btn btn-small">-_.</button>
+          <button type="button" id="preset-wide" class="btn btn-small">!@#$%^&amp;*</button>
+        </div>
+        <p class="hint">用途：某些系统只允许部分符号，直接改成目标系统允许的集合，生成的密码无需再手工替换。</p>
+      </div>
+
+      <fieldset class="field">
+        <legend class="field-label">生成规则</legend>
+        <label class="check"><input type="checkbox" id="opt-exclude-ambiguous" checked><span id="label-ambiguous">避免易混淆字符</span></label>
+        <label class="check"><input type="checkbox" id="opt-avoid-sequences" checked>避免连续序列 (如 abc、123、qwerty)</label>
+        <label class="check"><input type="checkbox" id="opt-allow-repeats">允许相邻重复字符</label>
+      </fieldset>
+
+      <div class="field field-inline">
+        <label class="field-label" for="amount">批量数量</label>
+        <input type="number" id="amount" class="num-input" min="1" max="20" step="1" value="1" inputmode="numeric">
+        <span class="hint-inline">1–20，大于 1 时逐行显示</span>
+      </div>
+    </section>
+
+    <section id="panel-passphrase" class="card" role="tabpanel" aria-labelledby="tab-passphrase" hidden>
+      <h2>短语密码 (XKCD)</h2>
+
+      <div class="field">
+        <label class="field-label" for="words-range">单词数: <span id="words-value" class="value-badge">4</span></label>
+        <input type="range" id="words-range" min="4" max="12" step="1" value="4">
+      </div>
+
+      <div class="field">
+        <label class="field-label" for="separator-select">分隔符</label>
+        <select id="separator-select">
+          <option value="none" selected>无</option>
+          <option value="dash">-</option>
+          <option value="underscore">_</option>
+          <option value="dot">.</option>
+          <option value="space">空格</option>
+          <option value="custom">自定义…</option>
+        </select>
+        <input type="text" id="custom-separator" class="text-input mono" maxlength="8" spellcheck="false" autocomplete="off" aria-label="自定义分隔符" hidden>
+      </div>
+
+      <fieldset class="field">
+        <legend class="field-label">选项</legend>
+        <label class="check"><input type="checkbox" id="opt-date" checked>前缀日期 (生成 YYYYMMDD. 前缀)</label>
+      </fieldset>
+    </section>
+
+    <section class="card" aria-label="API 地址预览">
+      <h2>API 地址预览</h2>
+      <code id="api-preview" class="api-url"></code>
+      <button type="button" id="btn-copy-api" class="btn btn-small">复制 API 地址</button>
+    </section>
+
+    <footer class="page-footer">
+      <p>API 与 luzifer-password /v1/getPassword 兼容，旧调用无需修改。</p>
+      <p>所有生成均在本地浏览器完成，密码不会离开你的设备。</p>
+    </footer>
+  </main>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
