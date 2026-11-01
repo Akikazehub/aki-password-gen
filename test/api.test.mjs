@@ -251,6 +251,62 @@ test('empty or unusable symbol sets are client errors (400, not 500)', async () 
   assert.match(await ambiguous.text(), /no usable characters/);
 });
 
+test('separator is capped to blunt response amplification', async () => {
+  const tooLong = await getPassword(`?xkcd=true&length=4&separator=${'A'.repeat(65)}`);
+  assert.equal(tooLong.status, 400);
+  assert.equal(await tooLong.text(), 'separator must be at most 64 characters\n');
+
+  const atCap = await getPassword(`?xkcd=true&length=4&separator=${'A'.repeat(64)}`);
+  assert.equal(atCap.status, 200);
+  await atCap.text();
+});
+
+test('healthz answers every method like upstream', async () => {
+  for (const method of ['HEAD', 'POST']) {
+    const res = await fetch(`${base}/v1/healthz`, { method });
+    assert.equal(res.status, 200, method);
+    await res.text();
+  }
+});
+
+test('unknown paths 404 before any method gate, like gorilla/mux', async () => {
+  for (const path of ['/v1/nope', '/nope']) {
+    const res = await fetch(`${base}${path}`, { method: 'POST' });
+    assert.equal(res.status, 404, path);
+    assert.equal(await res.text(), '404 page not found\n');
+  }
+  const known = await fetch(`${base}/`, { method: 'POST' });
+  assert.equal(known.status, 405);
+  await known.text();
+});
+
+test('integer lengths within int64 mirror Go Atoi, beyond it the default', async () => {
+  // 1e16 parses in Go (int64), fails the 4..128 range check => 406.
+  const inInt64 = await getPassword('?length=9999999999999999');
+  assert.equal(inInt64.status, 406);
+  await inInt64.text();
+
+  // Beyond int64 Atoi errors and the default applies => 200.
+  const beyond = await getPassword('?length=99999999999999999999999');
+  assert.equal(beyond.status, 200);
+  assert.equal((await beyond.text()).length, 20);
+});
+
+test('malformed percent-escapes drop the pair like Go ParseQuery', async () => {
+  const body = await (await getPassword('?xkcd=true&length=4&date=false&separator=%ZZ')).text();
+  assert.doesNotMatch(body, /%ZZ/);
+  assert.match(body, /^[A-Z][a-z]+([A-Z][a-z]+){3}$/);
+});
+
+test('special=false explicitly disables the custom symbol implication', async () => {
+  for (let i = 0; i < 20; i++) {
+    const res = await getPassword('?special=false&special_chars=%21');
+    assert.equal(res.status, 200);
+    const body = await res.text();
+    assert.doesNotMatch(body, /!/, body);
+  }
+});
+
 test('query pairs containing a raw semicolon are dropped like Go ParseQuery', async () => {
   // Go's url.ParseQuery (1.17+) drops pairs with a raw ';', so upstream sees
   // an empty separator; '%3B' is kept and decoded on both sides.

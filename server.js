@@ -37,9 +37,12 @@ const STATIC_ROUTES = [
 ];
 
 const INTEGER_RE = /^[+-]?\d+$/;
+const INT64_MAX = 9223372036854775807n;
+const INT64_MIN = -9223372036854775808n;
 const NOT_FOUND = '404 page not found\n';
 const LENGTH_ERROR = 'Please do not use length with more than 128 or fewer than 4 characters!\n';
 const AMOUNT_ERROR = 'amount must be between 1 and 100\n';
+const SEPARATOR_ERROR = 'separator must be at most 64 characters\n';
 
 const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
 // Routine logs are silenced when this module is imported (e.g. by the tests).
@@ -47,10 +50,16 @@ const log = isMain ? (msg) => console.log(msg) : () => {};
 
 function parseStrictInt(value, fallback) {
   if (value === null || !INTEGER_RE.test(value)) return fallback;
-  // Go's strconv.Atoi errors on out-of-range integers and falls back to the
-  // default; mirror that instead of clamping a huge number into the range check.
-  const parsed = Number.parseInt(value, 10);
-  return Number.isSafeInteger(parsed) ? parsed : fallback;
+  // Go's strconv.Atoi parses up to int64 (after which the 4..128 range check
+  // runs) and errors beyond that, applying the default. Emulate both: values
+  // within [2^53, 2^63) must reach the range check (=> 406), larger ones
+  // fall back. 15 digits are always below 2^53, so parseInt stays exact.
+  if (value.length <= 15) {
+    return Number.parseInt(value, 10);
+  }
+  const big = BigInt(value);
+  if (big > INT64_MAX || big < INT64_MIN) return fallback;
+  return Number(big);
 }
 
 function parseStrictBool(value, fallback) {
@@ -102,11 +111,22 @@ function handleHealthz(res) {
   res.end();
 }
 
+// Go's url.ParseQuery (1.17+) silently drops any query pair whose raw segment
+// contains a literal ';' or a malformed percent-escape; mirror both so legacy
+// separator values behave exactly like upstream.
+function isParseablePair(pair) {
+  for (let i = 0; i < pair.length; i++) {
+    if (pair[i] === ';') return false;
+    if (pair[i] === '%') {
+      if (!/^[0-9a-fA-F]{2}$/.test(pair.slice(i + 1, i + 3))) return false;
+      i += 2;
+    }
+  }
+  return true;
+}
+
 function handleGetPassword(res, url) {
-  // Go's url.ParseQuery (1.17+) silently drops any query pair whose raw
-  // segment contains a literal ';'; mirror that so legacy separator values
-  // with an unencoded ';' behave exactly like upstream.
-  const rawPairs = url.search.replace(/^\?/, '').split('&').filter((p) => !p.includes(';'));
+  const rawPairs = url.search.replace(/^\?/, '').split('&').filter(isParseablePair);
   const sp = new URLSearchParams(rawPairs.join('&'));
 
   const length = parseStrictInt(sp.get('length'), 20);
@@ -135,6 +155,14 @@ function handleGetPassword(res, url) {
 
   const xkcd = sp.get('xkcd') === 'true';
   const asJson = sp.get('format') === 'json';
+
+  // A giant separator would amplify into a giant response body (128 words x
+  // separator x amount); cap it well below anything useful.
+  const separator = sp.get('separator') ?? '';
+  if (separator.length > 64) {
+    sendText(res, 400, SEPARATOR_ERROR, { api: true });
+    return;
+  }
 
   // Configuration mistakes (empty symbol set, every class disabled, ...) are
   // client errors: preflight them so they answer 400 instead of failing with
@@ -165,7 +193,7 @@ function handleGetPassword(res, url) {
       passwords.push(xkcd
         ? generatePassphrase({
             words: length,
-            separator: sp.get('separator') ?? '',
+            separator,
             prependDate: sp.get('date') !== 'false',
           })
         : generatePassword(genOptions));
@@ -208,39 +236,42 @@ function handleRequest(req, res) {
   res.on('finish', () => log(`${req.method} ${pathname} ${res.statusCode}`));
 
   if (pathname.startsWith('/v1/')) {
+    // Upstream registers healthz without a method restriction, and the router
+    // 404s unknown paths before any method gate — mirror both orderings.
+    if (pathname === '/v1/healthz') {
+      handleHealthz(res);
+      return;
+    }
+    if (pathname !== '/v1/getPassword') {
+      sendText(res, 404, NOT_FOUND, { api: true });
+      return;
+    }
     if (req.method !== 'GET') {
-      // gorilla/mux answers non-GET with an empty 405 + Allow; mirror it.
       res.writeHead(405, { Allow: 'GET', 'Access-Control-Allow-Origin': '*' });
       res.end();
       return;
     }
-    if (pathname === '/v1/healthz') {
-      handleHealthz(res);
-    } else if (pathname === '/v1/getPassword') {
-      handleGetPassword(res, url);
-    } else {
-      sendText(res, 404, NOT_FOUND, { api: true });
-    }
+    handleGetPassword(res, url);
     return;
   }
 
+  const route = STATIC_ROUTES.find(([path]) => path === pathname);
+  if (!route) {
+    sendText(res, 404, NOT_FOUND);
+    return;
+  }
   if (req.method !== 'GET') {
     res.writeHead(405, { Allow: 'GET' });
     res.end();
     return;
   }
-  for (const [route, baseDir, file, contentType] of STATIC_ROUTES) {
-    if (pathname === route) {
-      sendFile(res, baseDir, file, contentType);
-      return;
-    }
-  }
-  sendText(res, 404, NOT_FOUND);
+  sendFile(res, route[1], route[2], route[3]);
 }
 
 export function startServer({ port = Number(process.env.PORT) || 3000 } = {}) {
   const server = http.createServer(handleRequest);
-  server.listen(port, '0.0.0.0');
+  // No host argument: dual-stack listen (IPv6 + IPv4), like Go's `:3000`.
+  server.listen(port);
   server.on('listening', () => {
     log(`aki-password-gen listening on :${server.address().port}`);
   });

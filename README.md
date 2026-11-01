@@ -39,7 +39,7 @@ docker run -d --name aki-password-gen -p 3000:3000 --restart unless-stopped ghcr
 | `special` | `false` | `true` 时启用特殊字符（默认字符集见下） |
 | `xkcd` | `false` | `true` 时生成短语密码 |
 | `date` | `true` | 仅 xkcd 模式：是否前缀 `YYYYMMDD.`，`false` 关闭 |
-| `separator` | 空 | 仅 xkcd 模式：单词分隔符 |
+| `separator` | 空 | 仅 xkcd 模式：单词分隔符（最长 64 字符，超出返回 400） |
 
 默认特殊字符集（与旧版相同）：`!#$%&()*+,-_./:;=?@[]^{}~|`
 
@@ -47,7 +47,7 @@ docker run -d --name aki-password-gen -p 3000:3000 --restart unless-stopped ghcr
 
 | 参数 | 默认 | 说明 |
 | --- | --- | --- |
-| `special_chars`（别名 `custom_symbols`） | 旧版字符集 | **自定义特殊字符集合**，URL 编码后传入。指定后自动启用符号（除非显式传 `symbols=false`） |
+| `special_chars`（别名 `custom_symbols`） | 旧版字符集 | **自定义特殊字符集合**，URL 编码后传入。指定后自动启用符号（除非显式传 `special=false` 或 `symbols=false`） |
 | `symbols` | 同 `special` | 符号开关（`special` 是它的旧版别名） |
 | `lowercase` / `uppercase` / `digits` | `true` | 小写 / 大写 / 数字开关 |
 | `exclude_ambiguous` | `true` | 排除易混淆字符 `I l 0 O B 8`（旧版强制排除，故默认开启） |
@@ -61,7 +61,8 @@ docker run -d --name aki-password-gen -p 3000:3000 --restart unless-stopped ghcr
 #### 错误响应
 
 - `406`：`Please do not use length with more than 128 or fewer than 4 characters!`
-- `400`：`amount must be between 1 and 100`
+- `400`：`amount must be between 1 and 100`、`separator must be at most 64 characters`，
+  以及空符号集、全部字符类被禁用等配置错误
 - `500`：`generating password: <原因>`
 
 #### 示例
@@ -129,7 +130,7 @@ curl 'http://nas:3000/v1/getPassword?xkcd=true&length=4&separator=-&date=false'
 
 ## GitHub Actions 自动构建
 
-推送到 `main`（或打 `v*` 标签）时，工作流会：
+推送到 `main`（或打 `v*.*.*` 格式的标签，如 `v1.0.0`）时，工作流会：
 
 1. 跑完整测试套件（`npm test`）
 2. 构建 `linux/amd64` + `linux/arm64` 双架构镜像（覆盖绝大多数群晖机型）

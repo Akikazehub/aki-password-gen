@@ -164,6 +164,39 @@ test('legacy configurations keep the blind rejection-sampling path', () => {
   }
 });
 
+test('astral pools enforce adjacent-repeat per code point', () => {
+  for (let i = 0; i < 100; i++) {
+    const pw = generatePassword({
+      lowercase: false, uppercase: false, digits: false,
+      symbols: true, specialChars: '😀😎', excludeAmbiguous: false,
+      allowRepeats: false, length: 8,
+    });
+    const points = [...pw];
+    assert.equal(points.length, 8, pw);
+    for (let j = 1; j < points.length; j++) {
+      assert.notEqual(points[j - 1], points[j], `adjacent repeat in ${pw}`);
+    }
+  }
+});
+
+test('constructive path bans uppercase forbidden trigrams', () => {
+  // Regression: upperPatterns.includes(window) was an array membership test
+  // and never matched; INSECURE_TRIGRAMS.has must be used instead.
+  const pw = generatePassword({
+    lowercase: false, uppercase: false, digits: false,
+    symbols: true, specialChars: 'ABC', excludeAmbiguous: false,
+    allowRepeats: false, length: 64,
+  });
+  assert.equal(hasInsecurePattern(pw), false, pw);
+});
+
+test('sanitizeSpecialChars drops DEL, C1 and bidi/zero-width characters', () => {
+  const rtl = String.fromCharCode(0x202e);
+  const zws = String.fromCharCode(0x200b);
+  const del = String.fromCharCode(0x7f);
+  assert.equal(sanitizeSpecialChars(`a${rtl}b${zws}c${del}`), 'abc');
+});
+
 test('length bounds are enforced', () => {
   assert.throws(() => generatePassword({ length: 3 }), /length/);
   assert.throws(() => generatePassword({ length: 129 }), /length/);

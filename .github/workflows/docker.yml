@@ -6,6 +6,7 @@ on:
       - main
     tags:
       - 'v*.*.*'
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -56,29 +57,11 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Optional: only logs in and pushes when the Docker Hub secrets exist.
-      - name: Log in to Docker Hub
-        if: env.DOCKERHUB_USERNAME != ''
-        uses: docker/login-action@v3
-        with:
-          username: ${{ env.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
       - name: GHCR image metadata
         id: meta_ghcr
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/${{ github.repository }}
-          tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=semver,pattern={{version}}
-
-      - name: Docker Hub image metadata
-        id: meta_hub
-        if: env.DOCKERHUB_USERNAME != ''
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.DOCKERHUB_USERNAME }}/aki-password-gen
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=semver,pattern={{version}}
@@ -94,8 +77,28 @@ jobs:
           cache-from: type=gha,scope=ghcr
           cache-to: type=gha,mode=max,scope=ghcr
 
+      # Optional: only runs when BOTH Docker Hub secrets exist, and only after
+      # the GHCR push, so a half-configured Hub setup cannot break the primary
+      # publication.
+      - name: Log in to Docker Hub
+        if: env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != ''
+        uses: docker/login-action@v3
+        with:
+          username: ${{ env.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Docker Hub image metadata
+        id: meta_hub
+        if: env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != ''
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.DOCKERHUB_USERNAME }}/aki-password-gen
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=semver,pattern={{version}}
+
       - name: Build and push Docker Hub image
-        if: env.DOCKERHUB_USERNAME != ''
+        if: env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != ''
         uses: docker/build-push-action@v6
         with:
           context: .
