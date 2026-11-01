@@ -111,6 +111,38 @@ test('allowRepeats=true permits adjacent repeats', () => {
   assert.ok(sawRepeat, 'expected adjacent repeats across 200 draws');
 });
 
+test('passphrase word count rejects NaN and over-list requests', () => {
+  assert.throws(() => generatePassphrase({ words: Number.NaN }), /less than 4/);
+  assert.throws(() => generatePassphrase({ words: 4000 }), /word list/);
+  assert.equal(generatePassphrase({ words: 3881, prependDate: false }).split(/(?<=[a-z])(?=[A-Z])/).length, 3881);
+});
+
+test('entropy helpers are NaN-safe for unvalidated input', () => {
+  assert.equal(entropyBits({ length: Number.NaN }), 0);
+  assert.ok(Number.isFinite(entropyBits({ symbols: true, specialChars: undefined })));
+  assert.equal(passphraseEntropyBits({ words: Number.NaN }), 0);
+});
+
+test('astral-plane symbols are drawn as whole code points', () => {
+  const pw = generatePassword({
+    lowercase: false, uppercase: false, digits: false,
+    symbols: true, specialChars: '😀', excludeAmbiguous: false,
+    allowRepeats: true, length: 4,
+  });
+  const points = [...pw];
+  assert.equal(points.length, 4, `expected 4 emoji code points in ${JSON.stringify(pw)}`);
+  for (const c of points) assert.equal(c, '😀');
+});
+
+test('practically-impossible configs fail fast instead of burning retries', () => {
+  const start = Date.now();
+  assert.throws(
+    () => generatePassword({ lowercase: false, uppercase: false, digits: false, symbols: true, specialChars: 'x', length: 16 }),
+    /unreachable/,
+  );
+  assert.ok(Date.now() - start < 2000, 'fail-fast guard must not burn the retry budget');
+});
+
 test('length bounds are enforced', () => {
   assert.throws(() => generatePassword({ length: 3 }), /length/);
   assert.throws(() => generatePassword({ length: 129 }), /length/);

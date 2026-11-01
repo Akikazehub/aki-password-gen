@@ -101,7 +101,11 @@ function handleHealthz(res) {
 }
 
 function handleGetPassword(res, url) {
-  const sp = url.searchParams;
+  // Go's url.ParseQuery (1.17+) silently drops any query pair whose raw
+  // segment contains a literal ';'; mirror that so legacy separator values
+  // with an unencoded ';' behave exactly like upstream.
+  const rawPairs = url.search.replace(/^\?/, '').split('&').filter((p) => !p.includes(';'));
+  const sp = new URLSearchParams(rawPairs.join('&'));
 
   const length = parseStrictInt(sp.get('length'), 20);
   if (length < MIN_LENGTH || length > MAX_LENGTH) {
@@ -164,8 +168,9 @@ function handleGetPassword(res, url) {
     });
     res.end(JSON.stringify(passwords));
   } else {
+    // Byte-compat: upstream sets exactly `text/plain` on success (no charset).
     res.writeHead(200, {
-      'Content-Type': 'text/plain; charset=utf-8',
+      'Content-Type': 'text/plain',
       'Cache-Control': 'no-cache',
       'Access-Control-Allow-Origin': '*',
     });
@@ -187,7 +192,9 @@ function handleRequest(req, res) {
 
   if (pathname.startsWith('/v1/')) {
     if (req.method !== 'GET') {
-      sendText(res, 405, '405 method not allowed\n', { api: true, allow: 'GET' });
+      // gorilla/mux answers non-GET with an empty 405 + Allow; mirror it.
+      res.writeHead(405, { Allow: 'GET', 'Access-Control-Allow-Origin': '*' });
+      res.end();
       return;
     }
     if (pathname === '/v1/healthz') {
@@ -201,7 +208,8 @@ function handleRequest(req, res) {
   }
 
   if (req.method !== 'GET') {
-    sendText(res, 405, '405 method not allowed\n', { allow: 'GET' });
+    res.writeHead(405, { Allow: 'GET' });
+    res.end();
     return;
   }
   for (const [route, baseDir, file, contentType] of STATIC_ROUTES) {

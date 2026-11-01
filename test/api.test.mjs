@@ -38,7 +38,8 @@ test('default request returns legacy 20-char alnum password', async () => {
   for (let i = 0; i < 20; i++) {
     const res = await getPassword();
     assert.equal(res.status, 200);
-    assert.ok(res.headers.get('content-type').startsWith('text/plain'));
+    // Byte-compat: upstream sets exactly `text/plain` on success.
+    assert.equal(res.headers.get('content-type'), 'text/plain');
     assert.equal(res.headers.get('cache-control'), 'no-cache');
     const body = await res.text();
     assert.equal(body.length, 20);
@@ -218,9 +219,22 @@ test('xkcd word count is range checked like length', async () => {
   );
 });
 
-test('non-GET requests are rejected with 405', async () => {
+test('non-GET requests are rejected with an empty 405 like gorilla/mux', async () => {
   const res = await fetch(`${base}/v1/getPassword`, { method: 'POST' });
   assert.equal(res.status, 405);
+  assert.equal(res.headers.get('allow'), 'GET');
+  assert.equal(await res.text(), '');
+});
+
+test('query pairs containing a raw semicolon are dropped like Go ParseQuery', async () => {
+  // Go's url.ParseQuery (1.17+) drops pairs with a raw ';', so upstream sees
+  // an empty separator; '%3B' is kept and decoded on both sides.
+  const dropped = await (await getPassword('?xkcd=true&length=4&separator=a;b')).text();
+  assert.doesNotMatch(dropped, /a;b/);
+  assert.match(dropped, /^\d{8}\.[A-Z][a-z]+([A-Z][a-z]+){3}$/);
+
+  const kept = await (await getPassword('?xkcd=true&length=4&separator=a%3Bb')).text();
+  assert.ok(kept.includes('a;b'), `expected encoded separator kept: ${kept}`);
 });
 
 test('static routes never expose unmapped files and 404 gracefully', async () => {

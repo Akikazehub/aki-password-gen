@@ -128,7 +128,7 @@ function restoreSettings() {
     const value = parsed[key];
     if (value === undefined || value === null) continue;
     if (typeof fallback === 'boolean') {
-      settings[key] = Boolean(value);
+      settings[key] = value === true;
     } else if (typeof fallback === 'number') {
       const [min, max] = NUMERIC_LIMITS[key];
       settings[key] = clamp(value, min, max);
@@ -158,6 +158,7 @@ function setMode(mode) {
 /* ---------- 生成与渲染 ---------- */
 
 let lastResult = [];
+let lastError = null;
 
 function generateOne() {
   if (settings.mode === 'passphrase') {
@@ -172,12 +173,14 @@ function generateOne() {
 
 function generateAll() {
   el.genWarning.hidden = true;
+  lastError = null;
   lastResult = [];
   try {
     const count = settings.mode === 'passphrase' ? 1 : settings.amount;
     for (let i = 0; i < count; i++) lastResult.push(generateOne());
   } catch (err) {
-    el.genWarning.textContent = '生成失败：' + (err && err.message ? err.message : '请检查字符类型与长度设置');
+    lastError = err && err.message ? err.message : '请检查字符类型与长度设置';
+    el.genWarning.textContent = '生成失败：' + lastError;
     el.genWarning.hidden = false;
   }
 }
@@ -269,7 +272,11 @@ function buildApiUrl() {
 }
 
 function renderApiPreview() {
-  el.apiPreview.textContent = buildApiUrl();
+  // 无效配置（如符号集为空、全部字符类关闭）没有对应的 API 语义：
+  // 明确提示，而不是给出一个行为与界面矛盾的 URL。
+  el.apiPreview.textContent = lastError
+    ? `当前设置无法生成密码（${lastError}），API 地址不可用`
+    : buildApiUrl();
 }
 
 function renderAll() {
@@ -368,20 +375,19 @@ function bindEvents() {
   bindCheck(el.optAllowRepeats, 'allowRepeats');
   bindCheck(el.optDate, 'prefixDate');
 
-  const setLength = (value) => {
+  const applyLength = (value, { syncNumber = false } = {}) => {
     settings.length = clamp(value, 4, 128);
     el.lengthRange.value = String(settings.length);
+    // 只在滑块拖动和失焦校准时回写数字框，避免打断数字框内的输入。
+    if (syncNumber) el.lengthNumber.value = String(settings.length);
     saveSettings();
     scheduleRegenerate();
   };
-  el.lengthRange.addEventListener('input', () => setLength(el.lengthRange.value));
+  el.lengthRange.addEventListener('input', () => applyLength(el.lengthRange.value, { syncNumber: true }));
   el.lengthNumber.addEventListener('input', () => {
-    if (el.lengthNumber.value !== '') setLength(el.lengthNumber.value);
+    if (el.lengthNumber.value !== '') applyLength(el.lengthNumber.value);
   });
-  el.lengthNumber.addEventListener('change', () => {
-    setLength(el.lengthNumber.value);
-    el.lengthNumber.value = String(settings.length);
-  });
+  el.lengthNumber.addEventListener('change', () => applyLength(el.lengthNumber.value, { syncNumber: true }));
 
   el.specialChars.addEventListener('input', () => {
     settings.specialChars = el.specialChars.value;
@@ -434,6 +440,10 @@ function bindEvents() {
   el.btnRegenerate.addEventListener('click', renderAll);
   el.btnCopy.addEventListener('click', () => {
     const text = lastResult.length > 1 ? lastResult.join('\n') : (lastResult[0] || '');
+    if (!text) {
+      flashButton(el.btnCopy, '复制', false);
+      return;
+    }
     copyText(text, el.btnCopy, '复制');
   });
   el.btnCopyApi.addEventListener('click', () => copyText(buildApiUrl(), el.btnCopyApi, '复制 API 地址'));
