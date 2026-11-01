@@ -1,0 +1,14 @@
+{
+  "name": "aki-password-gen",
+  "version": "1.0.0",
+  "description": "Password generator with a v1-compatible HTTP API and a pure HTML/JS frontend",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test test/"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
